@@ -6,15 +6,27 @@ import math
 from sklearn.feature_extraction.text import TfidfVectorizer
 # nltk.download('punkt')
 import pandas as pd
+from textwrap import wrap
 
-def clean_up(doc):
+def clean_up(doc, n):
     tok = metapy.analyzers.ICUTokenizer(suppress_tags=True)
     tok = metapy.analyzers.LowercaseFilter(tok)
 
     # remove common words
     tok = metapy.analyzers.ListFilter(tok, "lemur-stopwords.txt", metapy.analyzers.ListFilter.Type.Reject)
-    tok.set_content(doc.content())
+    script = doc.content().replace("\n", "")
+    script = doc.content().replace("-", "")
 
+    size = int(len(script) / 3)
+    movie_parts = wrap(script, size)
+
+    if n < 4:
+        final_script = movie_parts[n-1]
+    else: 
+        final_script = script
+
+    tok.set_content(final_script)
+    doc.content(final_script)
     ana = metapy.analyzers.NGramWordAnalyzer(1, tok)
     grams = ana.analyze(doc)
     return grams
@@ -33,60 +45,50 @@ def get_score(k, my_dict):
         return 0
 
 if __name__ == '__main__':
-    # Takes in user input to select scoring method
-    print("WELCOME TO MOVIE RANKING PROGRAM")
-    method = input("Which method would you like to try (grams or tfidf)? ")
-
     doc = metapy.index.Document()
     neg_words, pos_words = load_words()
     dir_list = os.listdir("data")
+    dir_list.remove(".DS_Store")
+    # Computes sentiment score based on pos/neg words for each movie
+    movie_ranking = {}
 
-    if method == "tfidf":
-        dir_list.sort()
-        movie_words = {}    # maps each file to script contents
-        movie_contents = [] # list of script contents in sorted ascending movie name order
-        movie_index = {}    # maps sorted ascending movie name to index (0...number of movies-1)
-        i = 0
+    # Takes in user input to select scoring method
+    print("Welcome to the Movie Ranking Program!\n")
+    print("ABOUT THE PROGRAM:")
+    print("In this program we are parsing movie scripts to analyze the sentiment in terms of negative and positive words frequency and assigning a score for each movie.")
+    print("\nPROMPT:")
+    print("Which part of each movies would you like to parse?\n1) Beginning \n2) Middle \n3) Ending \n4) Whole Movie\n")
+    n = input("YOUR ANSWER: ")
+    part = ""
+    if n == 1:
+        part = "beginning part"
+    elif n == 2:
+        part = "middle part"
+    elif n == 3:
+        part == "ending part"
+    else:
+        part == "all parts"
 
-        # Creating mapping of each file to file contents
-        for file in dir_list:
-            movie_index[i] = file
-            with open ('data/' + file) as f:
-                contents = f.read()
-                movie_contents.append(contents)
-                doc.content(contents)
-                tokens = clean_up(doc)
-                movie_words[file] = tokens
-            i += 1
-        # Runs TFIDF and outputs result dataframe with sum scores for each movie
-        vectorizer = TfidfVectorizer()
-        vectors = vectorizer.fit_transform(movie_contents)
-        feature_names = vectorizer.get_feature_names()
-        dense = vectors.todense()
-        denselist = dense.tolist()
-
-        # Clean up resulting dataframe
-        result_df = pd.DataFrame(denselist, columns=feature_names).sum(axis = 1).rename(index=movie_index).to_frame()
-        result_df.reset_index(inplace=True)
-        result_df.columns = ['Movie', "Score"]
-        result_df = result_df.sort_values(by=['Score'], ascending=False)
-
-    elif method == "grams":
-        # Computes sentiment score based on pos/neg words for each movie
-        movie_ranking = {}
-        for file in dir_list:
-            with open ('data/' + file) as f:
-                doc.content(f.read())
-                tokens = clean_up(doc)
-                sentiment_dict = dict.fromkeys(tokens.keys(), 0)
-                for key in sentiment_dict:
-                    score = 0
-                    if key in neg_words:
-                        score -= 1
-                    elif key in pos_words:
-                        score += 1
-                    sentiment_dict[key] = score
-                movie_ranking[file] = sum(sentiment_dict.values())
-        movie_ranking = sorted(movie_ranking.items(), key=lambda x:x[1])
-        result_df = pd.DataFrame(movie_ranking, columns =['Movie', "Score"])
+    print("LOADING RESULTS...\n")
+    for file in dir_list:
+        with open ('data/' + file) as f:
+            doc.content(f.read())
+            tokens = clean_up(doc, int(n))
+            sentiment_dict = dict.fromkeys(tokens.keys(), 0)
+            for key in sentiment_dict:
+                score = 0
+                if key in neg_words:
+                    score -= 1
+                elif key in pos_words:
+                    score += 1
+                sentiment_dict[key] = score
+            movie_ranking[file] = sum(sentiment_dict.values())
+            
+    movie_ranking = sorted(movie_ranking.items(), key=lambda x:x[1])
+    result_df = pd.DataFrame(movie_ranking, columns =['Movie', "Score"])
+    print("ALGORITHM RESULTS:")
     print(result_df)
+    print("\nINTERPRETING RESULTS:")
+    print("You selected to analyze the", part, "of our movie corpus. The output of our program indicates that out of our movie corpus of", len(dir_list), "movies, we have", result_df['Movie'].iloc[-1],
+    "with the highest sentiment score of", result_df['Score'].iloc[-1], "which means the movie is overall the most positive. Inversely, the most movie script with the most negative sentiment according our program is",
+    result_df['Movie'].iloc[0], "with a sentiment score of", result_df['Score'].iloc[0], ".")
